@@ -14,7 +14,7 @@ import math
 # from shapely.geometry import Point
 
 # Path to shapefile
-shapefile = "TreehealthDataset/bomen.shp"
+shapefile = "../TreehealthDataset/bomen.shp"
 
 # Read the shapefile
 gdf = gpd.read_file(shapefile)
@@ -109,7 +109,7 @@ for side in {-90, 90}:
 
         if response.status_code == 200:
             # Construct a file name using ELEMENTNUM and save the image
-            filename = f"trash/tree_{row['ELEMENTNUM']}_{heading}.jpg" # Set to trash when testing
+            filename = f"images/tree_{row['ELEMENTNUM']}_{heading}.jpg" # Set to trash when testing
             with open(filename, 'wb') as file:
                 file.write(response.content)
         else:
