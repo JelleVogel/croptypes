@@ -14,7 +14,8 @@ import math
 # from shapely.geometry import Point
 
 # Path to shapefile
-shapefile = "../TreehealthDataset/bomen.shp"
+# shapefile = "../TreehealthDataset/bomen.shp"
+shapefile = "./data/TreeHealthDataSet/bomen.shp"
 
 # Read the shapefile
 gdf = gpd.read_file(shapefile)
@@ -24,17 +25,18 @@ pd.set_option('display.max_columns', None)
 filtered_gdf = gdf[gdf['CONDITIE'].notna() != "null"]
 
 # FIlter for the district Voordijkshoorn
-filtered_gdf = filtered_gdf[filtered_gdf['WIJK'] == "14 Voordijkshoorn"]
+# filtered_gdf = filtered_gdf[filtered_gdf['WIJK'] == "14 Voordijkshoorn"]
 
 
 # For my non native dutch friends: BOOMSORTIM is not dutch but I'm assuming it means species for this context
 # If you would like to filter on another species, you can check pinea.app (from the Akshit's link), and fill in that name
 # filtered_gdf = gdf[gdf['BOOMSORTIM'] == "Prunus serrulata 'Amanogawa'"] # 20 pictures, 0.14 cents
 # filtered_gdf = gdf[gdf['BOOMSORTIM'] == "Prunus 'Spire'"] # 20 pictures, 0.14 cents
-# filtered_gdf = filtered_gdf[filtered_gdf['BOOMSORTIM'] == "Acer"] # This one has 90 pictures. Thus !!! WE PAY 70 CENTS !!! when we run this!!!!!!
-filtered_gdf = filtered_gdf[filtered_gdf['BOOMSORTIM'] == "Fraxinus excelsior"] # 2000 PICTURES. RUNNING THIS WHOLE THING WITH NO DISTICT FILTER WOULD COST 14 DOLLARS!
+filtered_gdf = filtered_gdf[filtered_gdf['BOOMSORTIM'] == "Acer"] # This one has 90 pictures. Thus !!! WE PAY 70 CENTS !!! when we run this!!!!!!
+# filtered_gdf = filtered_gdf[filtered_gdf['BOOMSORTIM'] == "Fraxinus excelsior"] # 2000 PICTURES. RUNNING THIS WHOLE THING WITH NO DISTICT FILTER WOULD COST 14 DOLLARS!
 print("Number of data points:", filtered_gdf.shape[0])
 print("Running this whole set will cost ", filtered_gdf.shape[0]*7/1000, " Dollars!")
+
 
 # Switch dutch coordinate system to the correct format
 filtered_gdf = filtered_gdf.to_crs(epsg=4326)
@@ -43,9 +45,13 @@ filtered_gdf = filtered_gdf.to_crs(epsg=4326)
 
 
 # Define a function to construct the API URL
-def construct_url(heading, lat, lon, api_key):
+def construct_url(heading=None, lat=None, lon=None, api_key=None, with_heading=True):
     fov = 90
-    return f"https://maps.googleapis.com/maps/api/streetview?size=600x300&location={lat},{lon}&heading={heading}&fov={fov}&key={api_key}"
+
+    if with_heading:
+        return f"https://maps.googleapis.com/maps/api/streetview?size=600x300&location={lat},{lon}&heading={heading}&fov={fov}&key={api_key}"
+    else:
+        return f"https://maps.googleapis.com/maps/api/streetview?size=600x300&location={lat},{lon}&fov={fov}&key={api_key}"
 
 
 # Function copied from getAllRoadPtsBearing.py from the github
@@ -91,25 +97,44 @@ def heading_compensation(lat1, lon1):
     return heading
 
 
-
+use_heading = False
 # API key
 api_key = 'AIzaSyAes1mHa3VTn9T3hMUNJhlnJ_7DS4XT5so'
-for side in {-90, 90}:
+
+if use_heading:
+    for side in {-90, 90}:
+        for index, row in filtered_gdf.iterrows():
+            # Assuming the CRS is already in latitude and longitude (EPSG:4326)
+            lat, lon = row.geometry.y, row.geometry.x
+
+            heading = heading_compensation(lat, lon)
+            heading = heading + side # +/- 90 deg
+            # Construct URL
+            url = construct_url(heading, lat, lon, api_key, with_heading=False)
+
+            # Make the request
+            response = requests.get(url)
+
+            if response.status_code == 200:
+                # Construct a file name using ELEMENTNUM and save the image
+                filename = f"images/tree_{row['ELEMENTNUM']}_{heading}.jpg" # Set to trash when testing
+                with open(filename, 'wb') as file:
+                    file.write(response.content)
+            else:
+                print(f"Failed to fetch image for tree {row['ELEMENTNUM']}")
+
+else: 
     for index, row in filtered_gdf.iterrows():
         # Assuming the CRS is already in latitude and longitude (EPSG:4326)
         lat, lon = row.geometry.y, row.geometry.x
-
-        heading = heading_compensation(lat, lon)
-        heading = heading + side # +/- 90 deg
         # Construct URL
-        url = construct_url(heading, lat, lon, api_key)
-
+        heading = None
+        url = construct_url(heading, lat, lon, api_key, with_heading=False)
         # Make the request
         response = requests.get(url)
-
         if response.status_code == 200:
             # Construct a file name using ELEMENTNUM and save the image
-            filename = f"images/tree_{row['ELEMENTNUM']}_{heading}.jpg" # Set to trash when testing
+            filename = f"images/tree_{row['ELEMENTNUM']}_noHeading.jpg" # Set to trash when testing
             with open(filename, 'wb') as file:
                 file.write(response.content)
         else:

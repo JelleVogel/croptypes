@@ -11,9 +11,13 @@ venv/
 crops/
 .crops/
 
+#Notebooks
+test.ipynb
+
 # Images
 images/
 trash/
+data/
 
 # Distribution / packaging
 .Python
