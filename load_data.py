@@ -10,8 +10,19 @@ import geopandas as gpd
 import pandas as pd
 import requests
 import osmnx as ox
-import math
+import os
+import json
+from datetime import datetime
 # from shapely.geometry import Point
+
+# tree_condition = "Matig"
+# tree_condition = "Redelijk"
+# tree_condition = "Slecht"
+# tree_condition = "Zeer Slecht"
+tree_condition = "Goed"
+# tree_condition = "Dood"
+
+print("Generating data for trees with condition: ", tree_condition)
 
 # Path to shapefile
 # shapefile = "../TreehealthDataset/bomen.shp"
@@ -23,119 +34,103 @@ pd.set_option('display.max_columns', None)
 # print(gdf.head())
 # Filter the non entries and any conditions null.
 filtered_gdf = gdf[gdf['CONDITIE'].notna() != "null"]
+filtered_gdf = filtered_gdf[filtered_gdf['INSPECTIED'].notna()]
 
 # FIlter for the district Voordijkshoorn
 # filtered_gdf = filtered_gdf[filtered_gdf['WIJK'] == "14 Voordijkshoorn"]
-
 
 # For my non native dutch friends: BOOMSORTIM is not dutch but I'm assuming it means species for this context
 # If you would like to filter on another species, you can check pinea.app (from the Akshit's link), and fill in that name
 # filtered_gdf = gdf[gdf['BOOMSORTIM'] == "Prunus serrulata 'Amanogawa'"] # 20 pictures, 0.14 cents
 # filtered_gdf = gdf[gdf['BOOMSORTIM'] == "Prunus 'Spire'"] # 20 pictures, 0.14 cents
-filtered_gdf = filtered_gdf[filtered_gdf['BOOMSORTIM'] == "Acer"] # This one has 90 pictures. Thus !!! WE PAY 70 CENTS !!! when we run this!!!!!!
+# filtered_gdf = filtered_gdf[filtered_gdf['BOOMSORTIM'] == "Acer"] # This one has 90 pictures. Thus !!! WE PAY 70 CENTS !!! when we run this!!!!!!
 # filtered_gdf = filtered_gdf[filtered_gdf['BOOMSORTIM'] == "Fraxinus excelsior"] # 2000 PICTURES. RUNNING THIS WHOLE THING WITH NO DISTICT FILTER WOULD COST 14 DOLLARS!
-print("Number of data points:", filtered_gdf.shape[0])
-print("Running this whole set will cost ", filtered_gdf.shape[0]*7/1000, " Dollars!")
+filtered_gdf = filtered_gdf[filtered_gdf['CONDITIE'] == tree_condition]
 
 
 # Switch dutch coordinate system to the correct format
 filtered_gdf = filtered_gdf.to_crs(epsg=4326)
-# print(filtered_gdf.head())
+print(filtered_gdf.head())
+print(filtered_gdf.columns)
 
+# Function to convert date string to datetime object
+def parse_inspection_date(date_str):
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d')
+    except ValueError:
+        return None
 
+# Apply the parsing function to the 'INSPECTIED' column
+filtered_gdf['ParsedInspectionDate'] = filtered_gdf['INSPECTIED'].apply(parse_inspection_date)
+filtered_gdf[filtered_gdf['INSPECTIED']!=None]
 
-# Define a function to construct the API URL
-def construct_url(heading=None, lat=None, lon=None, api_key=None, with_heading=True):
-    fov = 90
+def create_directories(base_dir, tree_condition):
+    tree_condition_dir = os.path.join(base_dir, tree_condition)
 
-    if with_heading:
-        return f"https://maps.googleapis.com/maps/api/streetview?size=600x300&location={lat},{lon}&heading={heading}&fov={fov}&key={api_key}"
-    else:
-        return f"https://maps.googleapis.com/maps/api/streetview?size=600x300&location={lat},{lon}&fov={fov}&key={api_key}"
+    filtered_dir = os.path.join(tree_condition_dir, "filtered")
+    unfiltered_dir = os.path.join(tree_condition_dir, "unfiltered")
 
+    filt_image_dir = os.path.join(filtered_dir, "images")
+    filt_json_dir = os.path.join(filtered_dir, "json")
 
-# Function copied from getAllRoadPtsBearing.py from the github
-def computeBearing(fro, to):
-    y = math.sin(to[1]-fro[1]) * math.cos(to[0])
-    x = math.cos(fro[0])*math.sin(to[0]) - math.sin(fro[0])*math.cos(to[0])*math.cos(to[1]-fro[1])
-    θ = math.atan2(y, x)
-    brng = (θ*180/math.pi + 360) % 360
-    return brng
+    unfilt_image_dir = os.path.join(unfiltered_dir, "images")
+    unfilt_json_dir = os.path.join(unfiltered_dir, "json")
 
+    os.makedirs(filtered_dir, exist_ok=True)
+    os.makedirs(unfiltered_dir, exist_ok=True)
+    os.makedirs(filt_image_dir, exist_ok=True)
+    os.makedirs(filt_json_dir, exist_ok=True)
+    os.makedirs(unfilt_image_dir, exist_ok=True)
+    os.makedirs(unfilt_json_dir, exist_ok=True)
 
-# Function to determine the heading of the car
-def heading_compensation(lat1, lon1):
-    # Get the nearest networkx graph within 30 meters
-    G = ox.graph_from_point((lat1, lon1), dist=300, network_type='all')
+    return filt_image_dir, filt_json_dir
 
-    # See here a failed attempt to make the dataset generation more efficient.
-    # if len(G.nodes) == 0:
-    #     G = ox.graph_from_point((lat1, lon1), dist=300, network_type='all')
+image_directory, json_directory = create_directories("./trees", tree_condition)
 
-    # Find the nearest node in the graph to the point
-    # Note that I do not know if this will result in looking trough the windshield or the back of the car, 
-    # however it does not matter since we are interested in both looking to the left and looking to the right.
-    nearest_node = ox.distance.nearest_nodes(G, lon1, lat1)
-
-    # Get the lat and lon of the nearest node (street point)
-    lat2, lon2 = G.nodes[nearest_node]['y'], G.nodes[nearest_node]['x']
-
-    heading = computeBearing([lat1,lon1],[lat2,lon2])
-
-    # # Convert latitude and longitude from degrees to radians
-    # lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-
-    # dlat = lat2 - lat1
-
-    # x = math.sin(dlat) * math.cos(lat2)
-    # y = math.cos(lon1) * math.sin(lon2) - (math.sin(lon1) * math.cos(lon2) * math.cos(dlat))
-    # initial_bearing = math.atan2(x, y)
-
-    # # Convert bearing from radians to degrees and normalize
-    # heading = math.degrees(initial_bearing)
-
-    return heading
-
-
-use_heading = False
 # API key
 api_key = 'AIzaSyAes1mHa3VTn9T3hMUNJhlnJ_7DS4XT5so'
+# print(filtered_gdf['INSPECTIED'].head())
 
-if use_heading:
-    for side in {-90, 90}:
-        for index, row in filtered_gdf.iterrows():
-            # Assuming the CRS is already in latitude and longitude (EPSG:4326)
-            lat, lon = row.geometry.y, row.geometry.x
+print("Number of data points:", filtered_gdf.shape[0])
+print("Running this whole set will cost ", filtered_gdf.shape[0]*7/1000, " Dollars!")
+i=0
+for index, row in filtered_gdf.iterrows():
+    if i % 100 == 0:
+        print(i, "/", filtered_gdf.shape[0], " iterations passed")
+    # Assuming the CRS is already in latitude and longitude (EPSG:4326)
+    lat, lon = row.geometry.y, row.geometry.x
+    inspection_date = row['ParsedInspectionDate']
 
-            heading = heading_compensation(lat, lon)
-            heading = heading + side # +/- 90 deg
-            # Construct URL
-            url = construct_url(heading, lat, lon, api_key, with_heading=False)
+    # Construct url
+    url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={lat},{lon}&key={api_key}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        metadata = response.json()
+        if metadata['status'] == 'OK':
+            # Google Street View metadata provides the date in 'YYYY-MM' format
+            capture_date = datetime.strptime(metadata['date'], '%Y-%m')
+            # Check if the capture date is within your desired time frame of the inspection date
+            # print("GSV capture date: ", capture_date, "; Inspection date: ", inspection_date, "; Time difference: ", abs((capture_date - inspection_date).days), " Days")
+            image_url = f"https://maps.googleapis.com/maps/api/streetview?size=600x300&location={lat},{lon}&key={api_key}"
+            if image_url:
+                image_response = requests.get(image_url)
+            if(image_url and inspection_date != None):
+                if abs((capture_date - inspection_date).days) <= 90:  # Example: 90 days
+                    if image_url and image_response.status_code == 200 and 'image/jpeg' in image_response.headers.get('Content-Type', ''):
+                        # Save the image if it is a valid JPEG response
+                        image_filename = f"trees/{tree_condition}/filtered/images/tree_{row['ELEMENTNUM']}.jpg"
+                        with open(image_filename, 'wb') as file:
+                            file.write(image_response.content)
+                    json_filename = f"trees/{tree_condition}/filtered/json/tree_{row['ELEMENTNUM']}.json"
+                    with open(json_filename, 'w') as json_file:
+                        json.dump(metadata, json_file, indent=4)
+            if image_response.status_code == 200 and 'image/jpeg' in image_response.headers.get('Content-Type', ''):
+                # Save the image if it is a valid JPEG response
+                image_filename = f"trees/{tree_condition}/unfiltered/images/tree_{row['ELEMENTNUM']}.jpg"
+                with open(image_filename, 'wb') as file:
+                    file.write(image_response.content)
+            json_filename = f"trees/{tree_condition}/unfiltered/json/tree_{row['ELEMENTNUM']}.json"
+            with open(json_filename, 'w') as json_file:
+                json.dump(metadata, json_file, indent=4)
+    i+=1
 
-            # Make the request
-            response = requests.get(url)
-
-            if response.status_code == 200:
-                # Construct a file name using ELEMENTNUM and save the image
-                filename = f"images/tree_{row['ELEMENTNUM']}_{heading}.jpg" # Set to trash when testing
-                with open(filename, 'wb') as file:
-                    file.write(response.content)
-            else:
-                print(f"Failed to fetch image for tree {row['ELEMENTNUM']}")
-
-else: 
-    for index, row in filtered_gdf.iterrows():
-        # Assuming the CRS is already in latitude and longitude (EPSG:4326)
-        lat, lon = row.geometry.y, row.geometry.x
-        # Construct URL
-        heading = None
-        url = construct_url(heading, lat, lon, api_key, with_heading=False)
-        # Make the request
-        response = requests.get(url)
-        if response.status_code == 200:
-            # Construct a file name using ELEMENTNUM and save the image
-            filename = f"images/tree_{row['ELEMENTNUM']}_noHeading.jpg" # Set to trash when testing
-            with open(filename, 'wb') as file:
-                file.write(response.content)
-        else:
-            print(f"Failed to fetch image for tree {row['ELEMENTNUM']}")
