@@ -1,4 +1,12 @@
-# This script makes use of the Google Street View Static API to generate images given coordinates from the expert annotated set
+# This script makes use of the Google Street View Static API to generate images given coordinates from the expert annotated set.
+# When you run it, you can set the tree condition of which data you would like to capture. Then a folder structure is created for this label in the folder
+# "trees" (please create manually if it does not exist). This creates two folders "filtered" and "unfiltered" which both contain an "image" folder and
+# a "json" folder, which contains metadata associated to the gsv image.
+# In the main loop of the code, filtered data is collected. In the current script it is possible to filter using the amount of days since the last measurement
+# It is also possible to filter images from any season you prefer (I.E. spring/summer to ensure leaves are on the trees)
+# Our generated dataset has only the spring and summer seasons filtered and the days from inspection value is set at really high on purpose in order to
+# Only filter on seasons and not on the amount of time since inspection.
+
 # Note that using the url with the api key costs 7$ per 1000 requests. This means 0.7 cents per use. This can become very expensive really quick
 # So please take care when using the link. Perform the first trials on smaller segments of the data. When using a larger dataset, please check if
 # you are happy with the results before printing more pictures. Please abort the process if you are not happy with crtl+c.
@@ -15,11 +23,11 @@ import json
 from datetime import datetime
 # from shapely.geometry import Point
 
-# tree_condition = "Matig"
+tree_condition = "Matig"
 # tree_condition = "Redelijk"
 # tree_condition = "Slecht"
 # tree_condition = "Zeer Slecht"
-tree_condition = "Goed"
+# tree_condition = "Goed"
 # tree_condition = "Dood"
 
 print("Generating data for trees with condition: ", tree_condition)
@@ -50,8 +58,8 @@ filtered_gdf = filtered_gdf[filtered_gdf['CONDITIE'] == tree_condition]
 
 # Switch dutch coordinate system to the correct format
 filtered_gdf = filtered_gdf.to_crs(epsg=4326)
-print(filtered_gdf.head())
-print(filtered_gdf.columns)
+# print(filtered_gdf.head())
+# print(filtered_gdf.columns)
 
 # Function to convert date string to datetime object
 def parse_inspection_date(date_str):
@@ -85,15 +93,36 @@ def create_directories(base_dir, tree_condition):
 
     return filt_image_dir, filt_json_dir
 
+
+def get_season(date):
+    year = date.year
+    seasons = {
+        'spring': (datetime(year, 3, 21), datetime(year, 6, 20)),
+        'summer': (datetime(year, 6, 21), datetime(year, 9, 22)),
+        'autumn': (datetime(year, 9, 23), datetime(year, 12, 20)),
+        'winter': (datetime(year, 12, 21), datetime(year, 3, 20))
+    }
+    
+    for season, (season_start, season_end) in seasons.items():
+        if season_start <= date <= season_end:
+            return season
+
+    # Default to winter if the date isn't in the other ranges (for dates like 12/31)
+    return 'winter'
+
+
 image_directory, json_directory = create_directories("./trees", tree_condition)
 
 # API key
-api_key = 'AIzaSyAes1mHa3VTn9T3hMUNJhlnJ_7DS4XT5so'
+api_key = 'AIzaSyBAKyfH5aK83gKB-nY6vVn1ALtt9zXb2xM'
 # print(filtered_gdf['INSPECTIED'].head())
 
 print("Number of data points:", filtered_gdf.shape[0])
 print("Running this whole set will cost ", filtered_gdf.shape[0]*7/1000, " Dollars!")
 i=0
+metadata_notok = 0
+unfiltered_images_saved = 0
+treenumber = 0
 for index, row in filtered_gdf.iterrows():
     if i % 100 == 0:
         print(i, "/", filtered_gdf.shape[0], " iterations passed")
@@ -104,33 +133,51 @@ for index, row in filtered_gdf.iterrows():
     # Construct url
     url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={lat},{lon}&key={api_key}"
     response = requests.get(url)
-    if response.status_code == 200:
-        metadata = response.json()
-        if metadata['status'] == 'OK':
-            # Google Street View metadata provides the date in 'YYYY-MM' format
-            capture_date = datetime.strptime(metadata['date'], '%Y-%m')
-            # Check if the capture date is within your desired time frame of the inspection date
-            # print("GSV capture date: ", capture_date, "; Inspection date: ", inspection_date, "; Time difference: ", abs((capture_date - inspection_date).days), " Days")
-            image_url = f"https://maps.googleapis.com/maps/api/streetview?size=600x300&location={lat},{lon}&key={api_key}"
-            if image_url:
-                image_response = requests.get(image_url)
-            if(image_url and inspection_date != None):
-                if abs((capture_date - inspection_date).days) <= 90:  # Example: 90 days
-                    if image_url and image_response.status_code == 200 and 'image/jpeg' in image_response.headers.get('Content-Type', ''):
-                        # Save the image if it is a valid JPEG response
-                        image_filename = f"trees/{tree_condition}/filtered/images/tree_{row['ELEMENTNUM']}.jpg"
-                        with open(image_filename, 'wb') as file:
-                            file.write(image_response.content)
-                    json_filename = f"trees/{tree_condition}/filtered/json/tree_{row['ELEMENTNUM']}.json"
+    metadata = response.json()
+    if metadata['status'] == 'OK':
+        treenumber += 1
+        # Google Street View metadata provides the date in 'YYYY-MM' format
+        capture_date = datetime.strptime(metadata['date'], '%Y-%m')
+        # Check if the capture date is within your desired time frame of the inspection date
+        # print("GSV capture date: ", capture_date, "; Inspection date: ", inspection_date, "; Time difference: ", abs((capture_date - inspection_date).days), " Days")
+        image_url = f"https://maps.googleapis.com/maps/api/streetview?size=600x300&location={lat},{lon}&key={api_key}"
+        if image_url:
+            image_response = requests.get(image_url)
+        if(inspection_date != None):
+            # print(capture_date)
+            # print(inspection_date)
+
+            # HERE YOU CAN PERFORM FILTERING
+            if abs((capture_date - inspection_date).days) <= 122730:  # Picture taken at least 1000000 years ago
+                season = get_season(capture_date)
+                if(season == 'spring' or season == 'summer'): # Check if picture is made during spring or summer
+
+                    # Save the image in filtered
+                    image_filename = f"trees/{tree_condition}/filtered/images/tree_{treenumber}.jpg"
+                    with open(image_filename, 'wb') as file:
+                        file.write(image_response.content)
+
+                    # Save the json in filtered
+                    json_filename = f"trees/{tree_condition}/filtered/json/tree_{treenumber}.json"
                     with open(json_filename, 'w') as json_file:
                         json.dump(metadata, json_file, indent=4)
-            if image_response.status_code == 200 and 'image/jpeg' in image_response.headers.get('Content-Type', ''):
-                # Save the image if it is a valid JPEG response
-                image_filename = f"trees/{tree_condition}/unfiltered/images/tree_{row['ELEMENTNUM']}.jpg"
-                with open(image_filename, 'wb') as file:
-                    file.write(image_response.content)
-            json_filename = f"trees/{tree_condition}/unfiltered/json/tree_{row['ELEMENTNUM']}.json"
-            with open(json_filename, 'w') as json_file:
-                json.dump(metadata, json_file, indent=4)
+        # print(image_response.status_code)
+                        
+        # Save the image in unfiltered
+        image_filename = f"trees/{tree_condition}/unfiltered/images/tree_{treenumber}.jpg"
+        with open(image_filename, 'wb') as file:
+            unfiltered_images_saved += 1
+            if unfiltered_images_saved % 100 == 0:
+                print(unfiltered_images_saved, " Unfiltered images saved")
+            file.write(image_response.content)
+
+        # Save the json
+        json_filename = f"trees/{tree_condition}/unfiltered/json/tree_{treenumber}.json"
+        with open(json_filename, 'w') as json_file:
+            json.dump(metadata, json_file, indent=4)
+    else:
+        metadata_notok += 1
+        if metadata_notok % 100 == 0:
+            print("metadata status not OK for ", metadata_notok, " times")
     i+=1
 

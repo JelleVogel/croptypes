@@ -19,6 +19,7 @@ images/
 trash/
 data/
 trees/
+trees.zip
 
 # Distribution / packaging
 .Python
