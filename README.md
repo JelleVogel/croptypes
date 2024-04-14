@@ -3,13 +3,14 @@ Original paper can be found here: https://arxiv.org/pdf/2309.05930.pdf
 
 CS4240 Deep Learning (2023/24 Q3) - Group 15
 
-Authors (username, full name, student number, email address)
+# Authors
+Format: username, full name, student number, email address
 + nschattenberg, Niek Schattenberg, 5121930, N.E.Schattenberg@student.tudelft.nl
 + aseremak, Aleksander Seremak, 6075401, a.k.seremak@student.tudelft.nl
 + atheocharous, Alexandros Theocharous, 5930901, a.theocharous@student.tudelft.nl
 + JelleVogel, Jelle Vogel, 4459911, J.Vogel-1@student.tudelft.nl
 
-#Filestructure
+# Filestructure
 + `runs/`: Folder containing learning curve data of the treeNoTree classifier
 + `runs_condition/`: Folder containing learning curve data of the three condition classifier
 + `binary_tree_classifier.ipynb`: Script to train the resnet18 classifier to filter out images without a tree before classifing health condition. 
