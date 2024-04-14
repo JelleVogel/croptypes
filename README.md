@@ -11,6 +11,7 @@ Format: username, full name, student number, email address
 + JelleVogel, Jelle Vogel, 4459911, J.Vogel-1@student.tudelft.nl
 
 # Filestructure
++ `Reproducibility_Project_Team_15.pdf`: The blog post about this reproduction paper.
 + `runs/`: Folder containing learning curve data of the treeNoTree classifier
 + `runs_condition/`: Folder containing learning curve data of the three condition classifier
 + `binary_tree_classifier.ipynb`: Script to train the resnet18 classifier to filter out images without a tree before classifing health condition. 
